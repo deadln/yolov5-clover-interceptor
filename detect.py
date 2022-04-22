@@ -105,7 +105,7 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
     # Dataloader
     if ros_topic:
         rospy.init_node("drone_detection")
-        pub = rospy.Publisher('drone_detection/target', String, queue_size=1)
+        pub = rospy.Publisher('drone_detection/target', String, queue_size=100)
         dataset = LoadStreamsRos(source, img_size=imgsz, stride=stride)
         view_img = True
         bs = len(dataset)  # batch_size
@@ -154,8 +154,6 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
                 s += f'{i}: '
             else:
                 p, im0, frame = path, im0s.copy(), getattr(dataset, 'frame', 0)
-
-            # TODO: Сделать пропуск повторяющихся кадров
 
             p = Path(p)  # to Path
             save_path = str(save_dir / p.name)  # im.jpg

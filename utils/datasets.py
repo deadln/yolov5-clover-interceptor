@@ -382,6 +382,7 @@ class LoadStreamsRos:  # multiple IP or RTSP cameras
         self.img_size = img_size
         self.stride = stride
         self.bridge = CvBridge()
+        self.n = 0
 
         if os.path.isfile(sources):
             with open(sources, 'r') as f:
