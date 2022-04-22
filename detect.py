@@ -105,9 +105,10 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
     # Dataloader
     if ros_topic:
         rospy.init_node("drone_detection")
-        pub = rospy.Publisher('drone_detection/target', String, queue_size=10)
+        pub = rospy.Publisher('drone_detection/target', String, queue_size=1)
         dataset = LoadStreamsRos(source, img_size=imgsz, stride=stride)
         view_img = True
+        bs = len(dataset)  # batch_size
     elif webcam:
         view_img = check_imshow()
         cudnn.benchmark = True  # set True to speed up constant image size inference
@@ -123,6 +124,7 @@ def run(weights=ROOT / 'yolov5s.pt',  # model.pt path(s)
     dt, seen = [0.0, 0.0, 0.0], 0
     for path, im, im0s, vid_cap, s, timestamp in dataset:
         t1 = time_sync()
+        print("NEW IMAGE", t1)
         im = torch.from_numpy(im).to(device)
         im = im.half() if half else im.float()  # uint8 to fp16/32
         im /= 255  # 0 - 255 to 0.0 - 1.0

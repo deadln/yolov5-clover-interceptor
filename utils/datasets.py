@@ -32,8 +32,11 @@ from utils.general import (DATASETS_DIR, LOGGER, NUM_THREADS, check_dataset, che
 from utils.torch_utils import torch_distributed_zero_first
 
 import rospy
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CompressedImage
 from cv_bridge import CvBridge
+
+# Republish сжатого изображения
+# rosrun image_transport republish _image_transport:=compressed in:=/camera/color/image_raw raw out:=/camera/color/image_raw/comp
 
 # Parameters
 HELP_URL = 'https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
@@ -387,32 +390,25 @@ class LoadStreamsRos:  # multiple IP or RTSP cameras
             sources = [sources]
 
         n = 1 # len(sources)
-        self.imgs, self.fps, self.frames, self.threads, self.timestamp = [None] * n, [0] * n, [0] * n, [None] * n, [None] * n
+        self.imgs, self.fps, self.frames, self.threads, self.timestamp, self.is_showed = [None] * n, [0] * n, [0] * n, [None] * n, [None] * n, [False] * n
         # self.sources = [clean_str(x) for x in sources]  # clean source names for later
         self.sources = sources
         for i, s in enumerate(sources):  # index, source
             # Start thread to read frames from video stream
             print(f'{i + 1}/{n}: {s}... ', end='')
-            # if 'youtube.com/' in s or 'youtu.be/' in s:  # if source is YouTube video
-            #     check_requirements(('pafy', 'youtube_dl'))
-            #     import pafy
-            #     s = pafy.new(s).getbest(preftype="mp4").url  # YouTube URL
-            # s = eval(s) if s.isnumeric() else s  # i.e. s = '0' local webcam
-            # cap = cv2.VideoCapture(s)
-            rospy.Subscriber(s, Image, self.callback)
-            # assert cap.isOpened(), f'Failed to open {s}'
+            if s[-10:] == "compressed":
+                rospy.Subscriber(s, CompressedImage, self.callback_compressed)
+            else:
+                rospy.Subscriber(s, Image, self.callback)
             w = 640  # int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             h = 480  # int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             print(i)
             self.fps[i] = 15  # max(cap.get(cv2.CAP_PROP_FPS) % 100, 0) or 30.0  # 30 FPS fallback
             self.frames[i] = float('inf')  # max(int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), 0) or float('inf')  # infinite stream fallback
 
-            # _, self.imgs[i] = cap.read()  # guarantee first frame
             while self.imgs[i] is None:
                 pass
-            # self.threads[i] = Thread(target=self.update, args=([i, cap]), daemon=True)
             print(f" success ({self.frames[i]} frames {w}x{h} at {self.fps[i]:.2f} FPS)")
-            # self.threads[i].start()
         print('')  # newline
 
         # check for common shapes
@@ -436,13 +432,21 @@ class LoadStreamsRos:  # multiple IP or RTSP cameras
     def callback(self, message):
         self.imgs[0] = cv2.cvtColor(self.bridge.imgmsg_to_cv2(message, desired_encoding='passthrough'), cv2.COLOR_BGR2RGB)
         self.timestamp[0] = str(message.header.stamp.secs) + " " + str(message.header.stamp.nsecs)
-        # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        self.is_showed[0] = False
+
+    def callback_compressed(self, message):
+        np_arr = np.fromstring(message.data, np.uint8)
+        self.imgs[0] = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        self.timestamp[0] = str(message.header.stamp.secs) + " " + str(message.header.stamp.nsecs)
+        self.is_showed[0] = False
 
     def __iter__(self):
         self.count = -1
         return self
 
     def __next__(self):
+        while self.is_showed[0]:
+            pass
         self.count += 1
         # if not all(x.is_alive() for x in self.threads) or cv2.waitKey(1) == ord('q'):  # q to quit
         #     cv2.destroyAllWindows()
@@ -451,6 +455,8 @@ class LoadStreamsRos:  # multiple IP or RTSP cameras
         # Letterbox
         img0 = self.imgs.copy()
         img = [letterbox(x, self.img_size, auto=self.rect, stride=self.stride)[0] for x in img0]
+
+        self.is_showed[0] = True
 
         # Stack
         img = np.stack(img, 0)
@@ -466,7 +472,7 @@ class LoadStreamsRos:  # multiple IP or RTSP cameras
         return self.sources, img, img0, None, s, timestamp
 
     def __len__(self):
-        return 0  # 1E12 frames = 32 streams at 30 FPS for 30 years
+        return 1  # 1E12 frames = 32 streams at 30 FPS for 30 years
 
 
 def img2label_paths(img_paths):
